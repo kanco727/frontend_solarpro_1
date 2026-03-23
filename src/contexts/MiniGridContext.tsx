@@ -35,12 +35,21 @@ export const MiniGridProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [loading, setLoading] = useState(true);
 
   const fetchMiniGrids = async () => {
+    const token = localStorage.getItem("solarpro_token");
+
+    if (!token) {
+      setMiniGrids([]);
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       const data = await api.minigrids.list();
       setMiniGrids(data);
     } catch (err) {
       console.error("Erreur MiniGrids:", err);
+      setMiniGrids([]);
     } finally {
       setLoading(false);
     }
@@ -48,13 +57,12 @@ export const MiniGridProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   useEffect(() => {
     fetchMiniGrids();
-
-    //const interval = setInterval(fetchMiniGrids, 5000); // ✅ 5 secondes
-    //return () => clearInterval(interval);
   }, []);
 
   return (
-    <MiniGridContext.Provider value={{ miniGrids, refresh: fetchMiniGrids, loading }}>
+    <MiniGridContext.Provider
+      value={{ miniGrids, refresh: fetchMiniGrids, loading }}
+    >
       {children}
     </MiniGridContext.Provider>
   );
