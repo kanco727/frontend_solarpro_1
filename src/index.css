@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ------------------------------ */
+/* ✨ Animations personnalisées   */
+/* ------------------------------ */
+
+/* 🟢 Animation d'apparition vers le haut (pour le formulaire) */
+@keyframes slideUp {
+  0% {
+    transform: translateY(40px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* 🟣 Animation de fondu doux (pour texte et images) */
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-15px);
+  }
+  20% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  80% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+/* Classes utilitaires Tailwind personnalisées */
+.animate-slideUp {
+  animation: slideUp 1s ease-out forwards;
+}
+
+.animate-fadeIn {
+  animation: fadeIn 8s ease-in-out infinite;
+}
