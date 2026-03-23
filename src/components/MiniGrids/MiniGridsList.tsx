@@ -28,15 +28,38 @@ export default function MiniGridsList() {
   const normalizeStatut = (statut?: string) => {
     const s = (statut || '').toLowerCase().trim();
 
-    if (['en_service', 'en service', 'actif', 'active', 'online', 'actif(ve)'].includes(s)) {
+    if (
+      [
+        'en_service',
+        'en service',
+        'en_ligne',
+        'en ligne',
+        'actif',
+        'active',
+        'online',
+      ].includes(s)
+    ) {
       return 'en_service';
     }
+
     if (['maintenance', 'maint', 'en_maintenance'].includes(s)) {
       return 'maintenance';
     }
-    if (['hors_service', 'hors service', 'inactif', 'inactive', 'offline', 'arrete', 'arrêté'].includes(s)) {
+
+    if (
+      [
+        'hors_service',
+        'hors service',
+        'inactif',
+        'inactive',
+        'offline',
+        'arrete',
+        'arrêté',
+      ].includes(s)
+    ) {
       return 'hors_service';
     }
+
     if (['projete', 'projeté', 'planned', 'planifie', 'planifié'].includes(s)) {
       return 'projete';
     }
@@ -60,49 +83,41 @@ export default function MiniGridsList() {
   }, []);
 
   useEffect(() => {
-    if (sites.length > 0) {
-      const sitesById = Object.fromEntries(sites.map((s: SiteReadBack) => [s.id, s]));
-      const enriched = rawMiniGrids.map((m: any) => {
-        const site = sitesById[m.site_id];
-        let point = null;
+    const sitesById = Object.fromEntries(sites.map((s: SiteReadBack) => [s.id, s]));
 
-        if (site && site.point_wkt) {
-          const parts = site.point_wkt.match(/POINT\s*\(\s*([-\d.]+)\s+([-\d.]+)\s*\)/i);
-          if (parts && parts.length === 3) {
-            point = {
-              latitude: parseFloat(parts[2]),
-              longitude: parseFloat(parts[1]),
-            };
-          }
+    const enriched = rawMiniGrids.map((m: any) => {
+      const site = sitesById[m.site_id];
+      let point = null;
+
+      if (site && site.point_wkt) {
+        const parts = site.point_wkt.match(/POINT\s*\(\s*([-\d.]+)\s+([-\d.]+)\s*\)/i);
+        if (parts && parts.length === 3) {
+          point = {
+            latitude: parseFloat(parts[2]),
+            longitude: parseFloat(parts[1]),
+          };
         }
+      }
 
-        return {
-          ...m,
-          statut: normalizeStatut(m.statut),
-          siteId: m.site_id,
-          site: site
-            ? {
-                id: site.id,
-                projetId: site.projet_id,
-                localite: site.localite,
-                point,
-                populationEstimee: site.population_estimee,
-                statut: site.statut,
-                visibilite: site.visibilite,
-              }
-            : null,
-        };
-      });
+      return {
+        ...m,
+        statut: normalizeStatut(m.statut),
+        siteId: m.site_id,
+        site: site
+          ? {
+              id: site.id,
+              projetId: site.projet_id,
+              localite: site.localite,
+              point,
+              populationEstimee: site.population_estimee,
+              statut: site.statut,
+              visibilite: site.visibilite,
+            }
+          : null,
+      };
+    });
 
-      setMinigrids(enriched);
-    } else {
-      setMinigrids(
-        rawMiniGrids.map((m: any) => ({
-          ...m,
-          statut: normalizeStatut(m.statut),
-        }))
-      );
-    }
+    setMinigrids(enriched);
   }, [rawMiniGrids, sites]);
 
   const handleAddGrid = async (e: React.FormEvent) => {
