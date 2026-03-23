@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, Clock, CheckCircle } from 'lucide-react';
+import { BASE } from '../../services/api';
 
 type AlerteApi = {
   id: number;
@@ -25,22 +26,36 @@ export default function AlertsList() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('solarpro_token');
+    return {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+  };
+
   useEffect(() => {
     const loadAlertes = async () => {
       try {
         setLoading(true);
         setErr(null);
 
-        // Remplace cette URL par celle de ta route Swagger si besoin
-        const res = await fetch('/api/alertes/full');
+        const res = await fetch(`${BASE}/alertes/full`, {
+          headers: getAuthHeaders(),
+        });
+
         if (!res.ok) {
-          throw new Error(`${res.status} ${res.statusText}`);
+          const text = await res.text();
+          throw new Error(text || `${res.status} ${res.statusText}`);
         }
 
         const data: AlerteApi[] = await res.json();
 
         const mapped: AlerteUi[] = data
-          .sort((a, b) => new Date(b.time_stamp).getTime() - new Date(a.time_stamp).getTime())
+          .sort(
+            (a, b) =>
+              new Date(b.time_stamp).getTime() - new Date(a.time_stamp).getTime()
+          )
           .slice(0, 5)
           .map((a) => ({
             id: a.id,
@@ -53,6 +68,7 @@ export default function AlertsList() {
 
         setAlertes(mapped);
       } catch (e: any) {
+        console.error('Erreur chargement alertes :', e);
         setErr(e?.message || 'Erreur de chargement des alertes');
       } finally {
         setLoading(false);

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { BarChart3 } from 'lucide-react';
+import { BASE } from '../../services/api';
 
 type EnergyDay = {
   jour: string;
@@ -20,15 +21,26 @@ export default function EnergyChart() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const getAuthHeaders = () => {
+    const token = localStorage.getItem('solarpro_token');
+    return {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+  };
+
   useEffect(() => {
     const loadEnergy = async () => {
       try {
         setError(null);
 
-        const response = await fetch('/api/statistiques/energie-semaine');
+        const response = await fetch(`${BASE}/statistiques/energie-semaine`, {
+          headers: getAuthHeaders(),
+        });
 
         if (!response.ok) {
-          throw new Error(`Erreur API: ${response.status}`);
+          const text = await response.text();
+          throw new Error(text || `Erreur API: ${response.status}`);
         }
 
         const json: EnergyResponse = await response.json();
@@ -86,17 +98,9 @@ export default function EnergyChart() {
         </div>
       </div>
 
-      {loading && (
-        <p className="text-gray-500 text-sm">
-          Chargement des données...
-        </p>
-      )}
+      {loading && <p className="text-gray-500 text-sm">Chargement des données...</p>}
 
-      {!loading && error && (
-        <p className="text-red-500 text-sm">
-          {error}
-        </p>
-      )}
+      {!loading && error && <p className="text-red-500 text-sm">{error}</p>}
 
       {!loading && !error && (
         <>
@@ -121,9 +125,7 @@ export default function EnergyChart() {
                   ></div>
                 </div>
 
-                <span className="text-xs text-gray-600 font-medium">
-                  {item.jour}
-                </span>
+                <span className="text-xs text-gray-600 font-medium">{item.jour}</span>
               </div>
             ))}
           </div>
