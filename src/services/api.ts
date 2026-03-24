@@ -52,7 +52,6 @@ function getAuthHeaders(extraHeaders: Record<string, string> = {}) {
     ...extraHeaders,
   };
 }
-
 // ======================================
 // 🧩 Utilitaire fetch -> JSON ou erreur
 // ======================================

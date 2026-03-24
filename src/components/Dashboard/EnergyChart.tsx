@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { BarChart3 } from 'lucide-react';
-import { BASE } from '../../services/api';
+import React, { useEffect, useRef, useState } from "react";
+import { BarChart3 } from "lucide-react";
+import { BASE } from "../../services/api";
 
 type EnergyDay = {
   jour: string;
@@ -14,6 +14,14 @@ type EnergyResponse = {
   consommation_totale: number;
 };
 
+function getAuthHeaders() {
+  const token = localStorage.getItem("solarpro_token");
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
 export default function EnergyChart() {
   const [data, setData] = useState<EnergyDay[]>([]);
   const [productionTotale, setProductionTotale] = useState(0);
@@ -21,18 +29,18 @@ export default function EnergyChart() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const getAuthHeaders = () => {
-    const token = localStorage.getItem('solarpro_token');
-    return {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    };
-  };
+  const mountedRef = useRef(true);
 
   useEffect(() => {
+    mountedRef.current = true;
+
     const loadEnergy = async () => {
       try {
         setError(null);
+
+        if (data.length === 0) {
+          setLoading(true);
+        }
 
         const response = await fetch(`${BASE}/statistiques/energie-semaine`, {
           headers: getAuthHeaders(),
@@ -45,28 +53,35 @@ export default function EnergyChart() {
 
         const json: EnergyResponse = await response.json();
 
-        const orderedDays = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+        const orderedDays = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 
         const normalized = orderedDays.map((jour) => {
-          const found = json.jours.find((d) => d.jour === jour);
+          const found = json.jours?.find((d) => d.jour === jour);
           return found || { jour, production: 0, consommation: 0 };
         });
+
+        if (!mountedRef.current) return;
 
         setData(normalized);
         setProductionTotale(json.production_totale || 0);
         setConsommationTotale(json.consommation_totale || 0);
       } catch (err) {
-        console.error('Erreur chargement énergie :', err);
-        setError('Impossible de charger les données énergie.');
+        console.error("Erreur chargement énergie :", err);
+        if (!mountedRef.current) return;
+        setError("Impossible de charger les données énergie.");
       } finally {
+        if (!mountedRef.current) return;
         setLoading(false);
       }
     };
 
     loadEnergy();
 
-    const interval = setInterval(loadEnergy, 5000);
-    return () => clearInterval(interval);
+    const interval = setInterval(loadEnergy, 60_000);
+    return () => {
+      mountedRef.current = false;
+      clearInterval(interval);
+    };
   }, []);
 
   const maxValue =
@@ -98,7 +113,9 @@ export default function EnergyChart() {
         </div>
       </div>
 
-      {loading && <p className="text-gray-500 text-sm">Chargement des données...</p>}
+      {loading && (
+        <p className="text-gray-500 text-sm">Chargement des données...</p>
+      )}
 
       {!loading && error && <p className="text-red-500 text-sm">{error}</p>}
 
@@ -111,7 +128,7 @@ export default function EnergyChart() {
                   <div
                     className="bg-green-500 rounded-t"
                     style={{
-                      width: '50%',
+                      width: "50%",
                       height: `${(item.production / maxValue) * 100}%`,
                     }}
                   ></div>
@@ -119,13 +136,15 @@ export default function EnergyChart() {
                   <div
                     className="bg-blue-500 rounded-t"
                     style={{
-                      width: '50%',
+                      width: "50%",
                       height: `${(item.consommation / maxValue) * 100}%`,
                     }}
                   ></div>
                 </div>
 
-                <span className="text-xs text-gray-600 font-medium">{item.jour}</span>
+                <span className="text-xs text-gray-600 font-medium">
+                  {item.jour}
+                </span>
               </div>
             ))}
           </div>

@@ -1,5 +1,4 @@
-// src/components/Dashboard/Dashboard.tsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Zap,
   Sun,
@@ -42,9 +41,17 @@ interface RapportMaintenance {
   date_creation: string;
 }
 
+function getAuthHeaders() {
+  const token = localStorage.getItem("solarpro_token");
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
 export default function Dashboard() {
-  const { user, logout } = useAuth();
-  const { miniGrids } = useMiniGrids();
+  const { logout } = useAuth();
+  const { miniGrids, loading: miniGridsLoading } = useMiniGrids();
   const { isConnected, realtimeData } = useRealtime();
 
   const [loading, setLoading] = useState(true);
@@ -52,24 +59,42 @@ export default function Dashboard() {
   const [rapports, setRapports] = useState<RapportMaintenance[]>([]);
   const [nouveauxRapports, setNouveauxRapports] = useState(0);
 
-  // === Chargement des données générales ===
+  const mountedRef = useRef(true);
+
   useEffect(() => {
+    mountedRef.current = true;
+
     const fetchStats = async () => {
       try {
-        setLoading(true);
+        if (!stats) {
+          setLoading(true);
+        }
 
-        const resStats = await fetch(`${BASE}/statistiques/globales`);
+        const [resStats, resRapports] = await Promise.all([
+          fetch(`${BASE}/statistiques/globales`, {
+            headers: getAuthHeaders(),
+          }),
+          fetch(`${BASE}/statistiques/maintenance_rapports`, {
+            headers: getAuthHeaders(),
+          }),
+        ]);
+
         if (!resStats.ok) {
           throw new Error(`Erreur stats globales: ${resStats.status}`);
         }
-        const dataStats: GlobalStats = await resStats.json();
-        setStats(dataStats);
 
-        const resRapports = await fetch(`${BASE}/statistiques/maintenance_rapports`);
         if (!resRapports.ok) {
           throw new Error(`Erreur rapports maintenance: ${resRapports.status}`);
         }
-        const dataRapports: RapportMaintenance[] = await resRapports.json();
+
+        const [dataStats, dataRapports]: [
+          GlobalStats,
+          RapportMaintenance[]
+        ] = await Promise.all([resStats.json(), resRapports.json()]);
+
+        if (!mountedRef.current) return;
+
+        setStats(dataStats);
         setRapports(dataRapports);
 
         const now = new Date();
@@ -80,26 +105,34 @@ export default function Dashboard() {
             (1000 * 60 * 60 * 24);
           return diff < 2;
         });
+
         setNouveauxRapports(recents.length);
       } catch (error) {
         console.error("Erreur chargement dashboard :", error);
-        toast.error("Erreur lors du chargement des statistiques globales");
+        if (mountedRef.current) {
+          toast.error("Erreur lors du chargement des statistiques globales");
+        }
       } finally {
+        if (!mountedRef.current) return;
         setLoading(false);
       }
     };
 
-    fetchStats();
-    const interval = setInterval(fetchStats, 30000);
-    return () => clearInterval(interval);
+    const delayedStart = setTimeout(fetchStats, 300);
+    const interval = setInterval(fetchStats, 120_000);
+
+    return () => {
+      mountedRef.current = false;
+      clearTimeout(delayedStart);
+      clearInterval(interval);
+    };
   }, []);
 
-  // === Mise à jour temps réel des alertes ===
   useEffect(() => {
     if (!stats || realtimeData.size === 0) return;
 
     const totalRealtimeAlerts = Array.from(realtimeData.values()).reduce(
-      (sum, data) => sum + data.alerts.filter((a) => !a.resolved).length,
+      (sum, data) => sum + data.alerts.filter((a: any) => !a.resolved).length,
       0
     );
 
@@ -113,29 +146,32 @@ export default function Dashboard() {
     );
   }, [realtimeData]);
 
-  // === Calculs synchronisés avec les mini-grids ===
   const productionTotale = useMemo(() => {
     return miniGrids.reduce((sum, m) => sum + Number(m.production_kw || 0), 0);
   }, [miniGrids]);
 
   const normalizeStatus = (statut?: string) => {
-  const s = (statut || "").toLowerCase().trim();
+    const s = (statut || "").toLowerCase().trim();
 
-  if (s === "en service" || s === "en_service" || s === "en_ligne") return "en_service";
-  if (s === "maintenance") return "maintenance";
-  if (s === "hors service" || s === "hors_service") return "hors_service";
-  if (s === "projete" || s === "projeté") return "projete";
+    if (s === "en service" || s === "en_service" || s === "en_ligne") {
+      return "en_service";
+    }
+    if (s === "maintenance") return "maintenance";
+    if (s === "hors service" || s === "hors_service") return "hors_service";
+    if (s === "projete" || s === "projeté") return "projete";
 
-  return s;
-};
+    return s;
+  };
 
-const minigridsActives = useMemo(() => {
-  return miniGrids.filter((m) => normalizeStatus(m.statut) === "en_service").length;
-}, [miniGrids]);
+  const minigridsActives = useMemo(() => {
+    return miniGrids.filter((m) => normalizeStatus(m.statut) === "en_service")
+      .length;
+  }, [miniGrids]);
 
-const minigridsMaintenance = useMemo(() => {
-  return miniGrids.filter((m) => normalizeStatus(m.statut) === "maintenance").length;
-}, [miniGrids]);
+  const minigridsMaintenance = useMemo(() => {
+    return miniGrids.filter((m) => normalizeStatus(m.statut) === "maintenance")
+      .length;
+  }, [miniGrids]);
 
   const moyenneBatterie = useMemo(() => {
     return miniGrids.length
@@ -146,7 +182,7 @@ const minigridsMaintenance = useMemo(() => {
       : 0;
   }, [miniGrids]);
 
-  if (loading) {
+  if (loading && miniGridsLoading && !stats) {
     return <div className="p-6 text-gray-100">Chargement des données...</div>;
   }
 
@@ -163,49 +199,34 @@ const minigridsMaintenance = useMemo(() => {
       className="min-h-screen bg-cover bg-center bg-no-repeat p-6 relative"
       style={{ backgroundImage: `url(${bgImage})` }}
     >
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+      <Toaster position="top-right" />
+      <div className="absolute inset-0 bg-black/40"></div>
 
-      <div className="relative space-y-6 z-10">
-        <Toaster position="top-right" />
-
-        {/* Header */}
-        <div className="flex items-center justify-between text-white">
+      <div className="relative z-10 space-y-6">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold drop-shadow-lg">
-              🌞 Tableau de Bord SolarPro
+            <h1 className="text-3xl font-bold text-white">
+              Tableau de bord SolarPro
             </h1>
-            <p className="text-gray-200 mt-1 drop-shadow-sm">
-              Vue d'ensemble des installations solaires du Burkina Faso
+            <p className="text-white/80 mt-1">
+              Bienvenue sur la supervision temps réel des mini-grids
             </p>
           </div>
 
-          {/* Utilisateur */}
-          <div className="flex items-center gap-3 bg-white/10 backdrop-blur-md px-4 py-2 rounded-xl border border-white/20 shadow-lg">
-            <div className="bg-green-500 p-2 rounded-full text-white font-bold">
-              {user?.nomComplet
-                ? user.nomComplet[0].toUpperCase()
-                : user?.email?.[0]?.toUpperCase() ?? "U"}
-            </div>
-
-            <div className="text-right mr-2 leading-tight">
-              <p className="text-sm font-semibold text-white">{user?.email}</p>
-              <p className="text-xs text-green-300 capitalize">{user?.role}</p>
-            </div>
-
-            <div className="flex items-center gap-2 mr-2">
-              <div
-                className={`w-2 h-2 rounded-full ${
-                  isConnected ? "bg-green-400 animate-pulse" : "bg-red-400"
-                }`}
-              ></div>
-              <span className="text-xs text-white/80">
-                {isConnected ? "RT" : "OFF"}
-              </span>
+          <div className="flex items-center gap-3">
+            <div
+              className={`px-3 py-2 rounded-lg text-sm font-medium ${
+                isConnected
+                  ? "bg-green-100 text-green-800"
+                  : "bg-red-100 text-red-800"
+              }`}
+            >
+              {isConnected ? "Temps réel actif" : "Temps réel indisponible"}
             </div>
 
             <button
               onClick={() => logout()}
-              className="flex items-center gap-1 px-2 py-1 text-white/80 hover:text-white hover:bg-white/10 rounded-md transition"
+              className="bg-white/90 hover:bg-white text-gray-800 px-4 py-2 rounded-md transition"
               title="Déconnexion"
             >
               <LogOut className="w-4 h-4" />
@@ -213,13 +234,13 @@ const minigridsMaintenance = useMemo(() => {
           </div>
         </div>
 
-        {/* Notification maintenance */}
         {nouveauxRapports > 0 && (
           <div className="bg-green-100/80 backdrop-blur-sm border border-green-200 rounded-xl p-4 flex items-center justify-between shadow-lg">
             <div className="flex items-center gap-3">
               <Wrench className="text-green-700 w-5 h-5" />
               <span className="text-green-900 font-medium">
-                🛠️ {nouveauxRapports} nouveau(x) rapport(s) de maintenance soumis récemment
+                🛠️ {nouveauxRapports} nouveau(x) rapport(s) de maintenance soumis
+                récemment
               </span>
             </div>
             <Link
@@ -231,7 +252,6 @@ const minigridsMaintenance = useMemo(() => {
           </div>
         )}
 
-        {/* Cartes principales */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <StatsCard
             title="Mini-Grids Actives"
@@ -247,7 +267,11 @@ const minigridsMaintenance = useMemo(() => {
             value={`${productionTotale.toFixed(1)} kW`}
             icon={Sun}
             color="orange"
-            change={productionTotale > 0 ? "mise à jour temps réel" : "aucune production"}
+            change={
+              productionTotale > 0
+                ? "mise à jour temps réel"
+                : "aucune production"
+            }
             changeType={productionTotale > 0 ? "positive" : "neutral"}
           />
 
@@ -257,35 +281,27 @@ const minigridsMaintenance = useMemo(() => {
             icon={AlertTriangle}
             color="red"
             change="alertes critiques"
-            changeType={stats.total_alertes > 0 ? "negative" : "positive"}
+            changeType={stats.total_alertes > 0 ? "negative" : "neutral"}
           />
 
           <StatsCard
-            title="Rapports Envoyés"
+            title="Rapports envoyés"
             value={stats.tickets_rapport_envoye}
             icon={FileText}
             color="blue"
-            change={`${stats.tickets_termines} terminés`}
+            change={`${rapports.length} total`}
             changeType="positive"
           />
         </div>
 
-        {/* Graphique + carte */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-xl border border-white/30 p-4">
-            <EnergyChart />
-          </div>
-
-          <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-xl border border-white/30 p-4">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+          <div className="xl:col-span-2">
             <MiniGridMap />
           </div>
-        </div>
 
-        {/* Performance + alertes */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-xl border border-white/30 p-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">
-              Performance Générale
+          <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-xl border border-white/30 p-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              État global du système
             </h3>
 
             <div className="space-y-4">
@@ -320,8 +336,14 @@ const minigridsMaintenance = useMemo(() => {
               </div>
             </div>
           </div>
+        </div>
 
-          <div className="lg:col-span-2 bg-white/80 backdrop-blur-md rounded-2xl shadow-xl border border-white/30 p-4">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+          <div className="xl:col-span-2">
+            <EnergyChart />
+          </div>
+
+          <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-xl border border-white/30 p-4">
             <AlertsList />
           </div>
         </div>

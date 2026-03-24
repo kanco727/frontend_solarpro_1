@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
-import { AlertTriangle, Clock, CheckCircle } from 'lucide-react';
-import { BASE } from '../../services/api';
+import React, { useEffect, useRef, useState } from "react";
+import { AlertTriangle, Clock, CheckCircle } from "lucide-react";
+import { BASE } from "../../services/api";
 
 type AlerteApi = {
   id: number;
@@ -21,20 +21,35 @@ type AlerteUi = {
   timeStamp: string;
 };
 
+function getAuthHeaders() {
+  const token = localStorage.getItem("solarpro_token");
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
 export default function AlertsList() {
   const [alertes, setAlertes] = useState<AlerteUi[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
-  const getAuthHeaders = () => {
-    const token = localStorage.getItem('solarpro_token');
-    return {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    };
+  const mountedRef = useRef(true);
+
+  const normalizeNiveau = (niveau: string) => {
+    const n = (niveau || "").toLowerCase();
+
+    if (n.includes("crit")) return "crit";
+    if (n.includes("élev") || n.includes("eleve")) return "warn";
+    if (n.includes("moy")) return "warn";
+    if (n.includes("faible") || n.includes("info")) return "info";
+
+    return "info";
   };
 
   useEffect(() => {
+    mountedRef.current = true;
+
     const loadAlertes = async () => {
       try {
         setLoading(true);
@@ -66,49 +81,46 @@ export default function AlertsList() {
             timeStamp: a.time_stamp,
           }));
 
+        if (!mountedRef.current) return;
         setAlertes(mapped);
       } catch (e: any) {
-        console.error('Erreur chargement alertes :', e);
-        setErr(e?.message || 'Erreur de chargement des alertes');
+        console.error("Erreur chargement alertes :", e);
+        if (!mountedRef.current) return;
+        setErr(e?.message || "Erreur de chargement des alertes");
       } finally {
+        if (!mountedRef.current) return;
         setLoading(false);
       }
     };
 
-    loadAlertes();
+    const timeout = setTimeout(loadAlertes, 1200);
+
+    return () => {
+      mountedRef.current = false;
+      clearTimeout(timeout);
+    };
   }, []);
-
-  const normalizeNiveau = (niveau: string) => {
-    const n = (niveau || '').toLowerCase();
-
-    if (n.includes('crit')) return 'crit';
-    if (n.includes('élev') || n.includes('eleve')) return 'warn';
-    if (n.includes('moy')) return 'warn';
-    if (n.includes('faible') || n.includes('info')) return 'info';
-
-    return 'info';
-  };
 
   const getNiveauColor = (niveau: string) => {
     switch (niveau) {
-      case 'crit':
-        return 'text-red-600 bg-red-50 border-red-200';
-      case 'warn':
-        return 'text-orange-600 bg-orange-50 border-orange-200';
-      case 'info':
-        return 'text-blue-600 bg-blue-50 border-blue-200';
+      case "crit":
+        return "text-red-600 bg-red-50 border-red-200";
+      case "warn":
+        return "text-orange-600 bg-orange-50 border-orange-200";
+      case "info":
+        return "text-blue-600 bg-blue-50 border-blue-200";
       default:
-        return 'text-gray-600 bg-gray-50 border-gray-200';
+        return "text-gray-600 bg-gray-50 border-gray-200";
     }
   };
 
   const getIcon = (niveau: string) => {
     switch (niveau) {
-      case 'crit':
+      case "crit":
         return <AlertTriangle className="w-5 h-5 text-red-500" />;
-      case 'warn':
+      case "warn":
         return <Clock className="w-5 h-5 text-orange-500" />;
-      case 'info':
+      case "info":
         return <CheckCircle className="w-5 h-5 text-blue-500" />;
       default:
         return <AlertTriangle className="w-5 h-5 text-gray-500" />;
@@ -117,11 +129,11 @@ export default function AlertsList() {
 
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp);
-    return date.toLocaleString('fr-FR', {
-      hour: '2-digit',
-      minute: '2-digit',
-      day: '2-digit',
-      month: '2-digit',
+    return date.toLocaleString("fr-FR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      day: "2-digit",
+      month: "2-digit",
     });
   };
 
@@ -134,7 +146,10 @@ export default function AlertsList() {
         </button>
       </div>
 
-      {loading && <p className="text-sm text-gray-500">Chargement des alertes…</p>}
+      {loading && (
+        <p className="text-sm text-gray-500">Chargement des alertes…</p>
+      )}
+
       {err && <p className="text-sm text-red-600">Erreur : {err}</p>}
 
       {!loading && !err && (
